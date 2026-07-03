@@ -24,16 +24,6 @@ Unlike a traditional CRUD application, only incremental document updates are exc
 
 ---
 
-## Demo
-
-
-
-| Login | Dashboard | Collaborative Editing |
-|-------|-----------|-----------------------|
-| *Screenshot* | *Screenshot* | *Screenshot* |
-
----
-
 # Why This Project?
 
 Most web applications follow a request-response model:
@@ -416,60 +406,47 @@ Some of the key implementation challenges are described below.
 
 **Problem**
 
-The TipTap `CollaborationCursor` extension accesses the Yjs awareness object during editor construction. If the WebSocket provider has not yet connected, the awareness state is undefined, causing a crash (`Cannot read properties of undefined (reading 'doc')`).
+The editor could initialize before the shared Yjs document finished synchronizing, leading to inconsistent initial state.
 
 **Solution**
 
-The TipTap editor is extracted into a `<CollaborativeEditor>` sub-component that renders only after the WebSocket `connected` state becomes `true`. This defers editor construction until the WebSocket handshake is complete and the awareness object exists.
+Delay editor initialization until the shared document is ready, ensuring every collaborator starts from the same synchronized state.
 
 ---
 
-## 2. Synchronizing Users Across Multiple Backend Instances (Redis Fallback)
+## 2. Synchronizing Users Across Multiple Backend Instances
 
 **Problem**
 
-Initially, the document update handler returned early if Redis was unavailable (`if (!redisReady) return`). This meant that even users connected to the *same* server instance stopped receiving real-time updates if the Redis connection dropped.
+When different users connected to different backend instances, document updates needed to be propagated across servers instead of remaining local to a single process.
 
 **Solution**
 
-Decoupled in-memory broadcast from Redis publishing. The server now unconditionally broadcasts updates to all local WebSocket peers first. It only attempts to publish to Redis if `redisReady` is true, enabling graceful degradation to single-server mode if Redis fails.
+Redis Pub/Sub acts as a communication layer between backend instances. Every server subscribes to the same channel and broadcasts incoming updates to its connected clients.
 
 ---
 
-## 3. Data Loss on Last Disconnect
+## 3. Efficient Document Synchronization
 
 **Problem**
 
-The server periodically saves document state every 5 seconds. However, when the last user disconnected, the document was unloaded from memory and the timer was cleared immediately. Any edits made in the 0–5 seconds prior to disconnect were permanently lost.
+Sending the complete document after every keystroke creates unnecessary network traffic and quickly becomes inefficient for larger documents.
 
 **Solution**
 
-Implemented an async IIFE within the synchronous WebSocket `close` handler. This performs a final synchronous flush (`findByIdAndUpdate`) to MongoDB before fully unloading the Yjs document from server memory, ensuring zero data loss.
+Yjs generates compact binary updates containing only the changes. These incremental updates are transmitted over WebSockets and applied by every connected client.
 
 ---
 
-## 4. NPM Dependency Version Fragmentation
+## 4. Connection Recovery
 
 **Problem**
 
-Installing Tiptap v3 core packages alongside `@tiptap/extension-collaboration-cursor` (which had not yet been released for v3) caused NPM to resolve two separate copies of the `y-prosemirror` dependency. This resulted in a ProseMirror plugin key conflict and a broken editor.
+Users may temporarily lose their network connection while editing.
 
 **Solution**
 
-Pinned all Tiptap packages to a unified `v2.26.2` release in `package.json`, ensuring all extensions share a single singleton instance of `y-prosemirror`.
-
----
-
-## 5. MongoDB URI Parsing Failures
-
-**Problem**
-
-The MongoDB Atlas connection string password contained parentheses. When deploying, strict URI parsers failed to connect to the database because parentheses are not valid unescaped URI characters.
-
-**Solution**
-
-URL-encoded the special characters (`(` → `%28`, `)` → `%29`) directly in the connection string, ensuring robust parsing across all deployment environments.
-
+The client automatically reconnects and synchronizes with the latest persisted document state, allowing collaboration to continue without manual refresh.
 ---
 
 # Performance Considerations
@@ -642,7 +619,3 @@ The following resources were particularly helpful while building this project.
 | Deployment | Docker |
 
 ---
-
-# License
-
-This project is licensed under the MIT License.
