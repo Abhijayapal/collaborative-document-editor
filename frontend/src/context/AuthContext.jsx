@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useCallback } from "react";
 
 const AuthContext = createContext(null);
-const API = "http://localhost:5000";
+const API = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => {

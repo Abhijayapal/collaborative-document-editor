@@ -75,8 +75,10 @@ export default function EditorPage() {
   const providerRef = useRef(null);
   if (!ydocRef.current) {
     ydocRef.current     = new Y.Doc();
+    const wsUrl = import.meta.env.VITE_WS_URL || "ws://localhost:5000/yjs";
+    
     providerRef.current = new WebsocketProvider(
-      "ws://localhost:5000/yjs",
+      wsUrl,
       docId,
       ydocRef.current
     );
