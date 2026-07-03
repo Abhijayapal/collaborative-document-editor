@@ -1,0 +1,103 @@
+made a folder frontend, go inside it and run npm create vite@latest .
+
+(dot means create react app inside current folder)
+npm run dev ->to run
+npm install socket.io-client
+
+App.jsx is the frontend client that connects to your backend and syncs user input in real time
+useState → store text
+useEffect → run code when component loads
+io → connect to backend
+
+Backend → broadcasts
+Frontend → updates UI
+
+when user type
+User types
+↓
+handleChange()
+↓
+setText() → UI updates locally
+↓
+emit("send-changes")
+↓
+Backend receives
+↓
+Broadcast to others
+↓
+Other clients receive
+↓
+setText() → UI updates
+
+👉 “What does your frontend do?”
+
+You say:
+
+The frontend connects to the backend using Socket.IO, maintains the document state using React state, and listens for real-time updates from other users. When a user types, the changes are sent to the backend and broadcast to other clients, ensuring synchronization.
+
+What does main.jsx do?
+It’s the React entry point. It tells React which component to render and where in the HTML DOM to mount the app.
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+---------------------------DAY 2--------------------------------------------
+Browser (Frontend)
++-------------------------+   // entry point of React App
+| main.jsx                |
+|  ReactDOM.render(<App/>)|   // Mounts App.jsx into #root in HTML
++-------------------------+
+          |
+          v
++-------------------------+
+| App.jsx    |
+| - Textarea / Editor UI  |
+| - useState(text store)  |
+| - handleChange(Detect typing) |
+| - socket.emit("send-changes") |
+| - socket.on("receive-changes")|
++-------------------------+
+          |
+          v
+WebSocket (Socket.IO)    //send and receive changes and keep connection alive
+          |
+          v
++-------------------------+
+| Backend (Node.js + Socket.IO) |
+| - server.js (accepts connection) |
+| - socketHandler.js (handle join-document, send-changes,broadcasting)|
++-------------------------+
+          |
+          v
+Broadcast to other clients in same room
+          |
+          v
+Other clients’ App.jsx 
+- Updates text in real-time
+
+
+----------------------------------------------------------------------------
+to make it more pretty , i added shadcn
+npm install -D tailwindcss postcss autoprefixer
+npx tailwindcss init -p
+npx shadcn@latest init -t vite
+----------------------------------------------------------------------------
+Yjs for conflict resolution
+
+npm install yjs y-websocket
+------------------------------------------------------------------------------
+Day 4
+Live cursor and user presence
+Since we are already using yjs- we will user feature called Awarness API(user presence system)
+
+“How do you track active users?”
+Say:
+I used Yjs Awareness API, which allows sharing  user metadata like presence and cursor position across clients in real-time. 
+
+useState → React-controlled UI (slow for frequent updates)
+useRef → direct DOM control (fast, needed for CRDT)
+
+////////////////////////////////////////////////// lets use this later
+“How can you show multiple cursors?”
+Say:
+Native textarea doesn’t support multiple cursors, so alternatives include using a contentEditable div or overlaying cursor elements on top of the editor. For full-featured support, editors like Monaco or ProseMirror are preferred.
+////////////////////////////////////////////////////////////////////////////////
+
