@@ -1,118 +1,93 @@
-# Collaborative Document Editor
+# Real-Time Collaborative Document Synchronization System
 
-A real-time collaborative document editor inspired by applications like Google Docs, built to explore distributed systems, real-time synchronization, and scalable backend architecture.
+A distributed real-time document synchronization system built to explore network communication, concurrent state synchronization, and scalable backend architecture.
 
-The project focuses on a core engineering challenge:
+Although the user-facing application is a collaborative document editor, the primary focus of this project is the system responsible for synchronizing shared document state across multiple users connected through independent backend instances.
 
-> **How can multiple users edit the same document simultaneously without overwriting each other's work?**
+The implementation combines persistent TCP connections (WebSockets), Conflict-free Replicated Data Types (CRDTs), Redis Pub/Sub, and MongoDB to maintain a consistent document state while multiple users edit concurrently.
 
-To solve this, the editor combines **WebSockets**, **Yjs (CRDTs)**, **Redis Pub/Sub**, and **MongoDB** to synchronize document updates across multiple users and backend instances.
-
-Unlike a traditional CRUD application, only incremental document updates are exchanged, allowing users to collaborate in real time while keeping network traffic low.
+Instead of transmitting the complete document after every modification, only incremental binary updates are exchanged, reducing network overhead and improving synchronization latency.
 
 ---
 
-## Highlights
+# Engineering Problem
 
-- Real-time collaborative editing
-- CRDT-based conflict resolution using Yjs
-- Live cursor and user presence
-- JWT authentication
-- Redis Pub/Sub for multi-server synchronization
-- MongoDB persistence
-- Docker support
+Traditional web applications operate using independent HTTP requests.
+
+Collaborative applications introduce a different challenge:
+
+- multiple users modify shared state simultaneously,
+- updates must propagate with minimal delay,
+- concurrent edits should not overwrite one another,
+- all connected clients should eventually observe the same document state.
+
+The objective of this project was to design a synchronization pipeline capable of handling these requirements while remaining modular and scalable.
 
 ---
 
-# Why This Project?
+# Key Concepts Explored
 
-Most web applications follow a request-response model:
+This project provided practical experience with several systems-oriented concepts.
 
-```
-Client → Server → Response
-```
+### Networking
 
-Collaborative editors work differently.
+- Persistent TCP communication using WebSockets
+- HTTP request-response architecture
+- Binary message transmission
+- Client-server communication
 
-Every keystroke made by one user should appear on every other user's screen almost instantly.
+### Distributed Systems
 
-As more users join, the application must continue synchronizing changes without introducing conflicts or requiring users to manually merge edits.
+- State synchronization
+- Event propagation
+- Redis Pub/Sub messaging
+- Horizontal scalability
 
-Building this project helped me explore:
+### Concurrency
 
-- Event-driven communication using WebSockets
+- Concurrent document modifications
 - Conflict-free synchronization using CRDTs
-- Distributed messaging with Redis Pub/Sub
-- Stateless backend architecture
-- Designing systems that scale beyond a single server
+- Event ordering
 
-The objective wasn't to recreate Google Docs, but to understand the architectural decisions behind collaborative software.
+### Backend Engineering
 
----
-
-# Features
-
-## Real-Time Collaboration
-
-- Simultaneous document editing
-- Automatic synchronization between users
-- Incremental document updates
-- Live cursor awareness
-
-## Authentication
-
-- User registration and login
-- JWT-based authentication
-- Password hashing with bcrypt
-- Protected API routes
-
-## Distributed Synchronization
-
-- Redis Pub/Sub
-- Multiple backend instances
-- Cross-server document updates
-
-## Persistence
-
-- MongoDB document storage
-- Binary Yjs state persistence
-- Document metadata management
-
-## Developer Experience
-
-- Docker support
-- Modular backend architecture
-- REST APIs + WebSockets
-- Environment-based configuration
+- Stateless authentication
+- Modular service architecture
+- Database persistence
+- Event-driven communication
 
 ---
 
-# System Architecture
-
-The application separates user management, document synchronization, and persistence into independent components.
-
-This keeps responsibilities clear and allows each layer to evolve independently.
+# High-Level System Architecture
 
 ```mermaid
 flowchart LR
 
 subgraph Client
-A[React + TipTap Editor]
+
+A[Collaborative Editor]
+
 end
 
 subgraph Backend
-B[Express REST API]
-C[WebSocket Server]
+
+B[REST API]
+
+C[Synchronization Service]
+
 end
 
 subgraph Infrastructure
-D[(Redis Pub/Sub)]
+
+D[(Redis)]
+
 E[(MongoDB)]
+
 end
 
-A -->|Login / Documents| B
+A -->|HTTP| B
 
-A -->|Realtime Updates| C
+A -->|WebSocket| C
 
 C <-->|Publish / Subscribe| D
 
@@ -121,404 +96,370 @@ B --> E
 C --> E
 ```
 
-### Responsibilities
+The architecture separates user management from real-time synchronization.
+
+REST endpoints manage infrequent operations such as authentication and document management.
+
+Persistent WebSocket connections are reserved exclusively for low-latency document synchronization.
+
+This separation keeps communication patterns simple while allowing each protocol to serve its intended purpose.
+
+---
+
+# Why This Architecture?
+
+Rather than building a monolithic server, the application separates independent responsibilities.
 
 | Component | Responsibility |
-|------------|----------------|
-| React + TipTap | Rich text editor and user interface |
-| Express | Authentication, document management, REST APIs |
-| WebSocket Server | Real-time synchronization |
-| Redis | Broadcast document updates between backend instances |
-| MongoDB | Persistent document storage |
+|-----------|----------------|
+| REST API | Authentication and document management |
+| Synchronization Service | Real-time document updates |
+| Redis | Cross-instance message propagation |
+| MongoDB | Persistent storage |
+| Client | Rendering and local CRDT application |
+
+This modular design simplifies maintenance and makes individual components easier to scale independently.
 
 ---
 
-# How Synchronization Works
+# Communication Architecture
 
-Whenever a user edits a document, only the **incremental document update** is transmitted.
+The system uses two independent communication models, each selected based on the characteristics of the operation being performed.
 
-The complete document is **never** sent after every keystroke.
+## 1. HTTP (REST)
 
-```mermaid
-sequenceDiagram
-
-participant User A
-participant Editor
-participant Backend
-participant Redis
-participant User B
-
-User A->>Editor: Type text
-
-Editor->>Backend: CRDT Update
-
-Backend->>Redis: Publish Update
-
-Redis-->>Backend: Broadcast
-
-Backend-->>User B: Incremental Update
-
-User B-->>Editor: Apply Update
-```
-
-This keeps network traffic small and allows multiple users to continue editing simultaneously.
-
----
-
-# Request Flow
-
-The application uses **two different communication models**, depending on the type of operation.
-
-## REST APIs
-
-REST endpoints handle operations that occur occasionally.
+REST APIs are used for operations that occur infrequently and naturally follow a request-response pattern.
 
 Examples include:
 
 - User registration
-- Login
+- Authentication
 - Creating documents
 - Fetching document metadata
-- Listing documents
+- Listing available documents
 
 ```text
-Browser
-
-↓
-
+Client
+   │
 HTTP Request
-
-↓
-
-Express
-
-↓
-
+   │
+Express Server
+   │
 MongoDB
-
-↓
-
+   │
 HTTP Response
 ```
 
-REST works well because these operations naturally follow a request-response pattern.
+Using HTTP for these operations keeps the interface stateless and simplifies client-server communication.
 
 ---
 
-## WebSockets
+## 2. WebSocket Communication
 
-Editing behaves differently.
+Document editing requires continuous bidirectional communication.
 
-A user should receive changes immediately after another collaborator types.
-
-Instead of repeatedly polling the server, a persistent WebSocket connection is established.
+Once a document is opened, the client establishes a persistent WebSocket connection with the synchronization service.
 
 ```text
-Browser
-
-⇅
-
-WebSocket
-
-⇅
-
-Backend
-
-⇅
-
-Redis
-
-⇅
-
-Other Backend Instances
+Client
+    ⇅
+WebSocket Connection
+    ⇅
+Synchronization Service
 ```
 
-This allows the server to push updates in real time without additional HTTP requests.
+Unlike HTTP polling, the server can immediately push updates whenever another collaborator modifies the document.
+
+This significantly reduces synchronization latency and eliminates unnecessary network requests.
+
+---
+
+# Document Synchronization Pipeline
+
+Every edit follows the same synchronization pipeline.
+
+```mermaid
+sequenceDiagram
+
+participant Client
+participant WebSocket
+participant Sync Service
+participant Redis
+participant Other Clients
+
+Client->>WebSocket: Binary CRDT Update
+
+WebSocket->>Sync Service: Process Update
+
+Sync Service->>Redis: Publish Update
+
+Redis-->>Sync Service: Broadcast
+
+Sync Service-->>Other Clients: Forward Binary Update
+
+Other Clients->>Other Clients: Apply CRDT Update
+```
+
+Only incremental document updates are exchanged.
+
+The complete document is not retransmitted after every edit, reducing bandwidth usage while allowing multiple users to edit simultaneously.
+
+---
+
+# Distributed Synchronization
+
+Supporting multiple backend instances introduces an additional synchronization challenge.
+
+Users connected to different servers should observe identical document state.
+
+```mermaid
+flowchart LR
+
+UserA --> ServerA
+
+UserB --> ServerB
+
+ServerA --> Redis[(Redis Pub/Sub)]
+
+Redis --> ServerB
+
+ServerB --> UserB
+```
+
+Redis Pub/Sub acts as the communication layer between backend instances.
+
+When one synchronization service receives a document update, it publishes the update to Redis.
+
+Every backend instance subscribed to the same channel receives the update and forwards it to its locally connected clients.
+
+This architecture removes direct dependencies between backend servers while allowing the system to scale horizontally.
+
+---
+
+# Component Responsibilities
+
+| Component | Primary Responsibility |
+|------------|------------------------|
+| React Client | User interface and editor rendering |
+| TipTap | Rich text editing |
+| Yjs | Local CRDT state management |
+| Express | Authentication and REST APIs |
+| WebSocket Service | Low-latency synchronization |
+| Redis | Cross-instance event propagation |
+| MongoDB | Persistent document storage |
+
+Each component performs a single well-defined task, reducing coupling between different parts of the system.
 
 ---
 
 # Engineering Decisions
 
-Rather than selecting technologies because they are popular, each technology addresses a specific architectural problem.
+## Persistent Connections
+
+Maintaining a persistent WebSocket connection avoids the overhead of repeatedly establishing HTTP connections during active editing sessions.
+
+This allows document updates to be propagated immediately after they occur.
 
 ---
 
-## Why WebSockets instead of HTTP Polling?
+## Incremental Synchronization
 
-HTTP polling requires the browser to repeatedly ask the server if new updates are available.
+Instead of transmitting the entire document after every modification, the system exchanges compact binary CRDT updates.
 
-For collaborative editing this results in:
+Benefits include:
 
-- unnecessary requests
-- higher latency
-- wasted bandwidth
-
-WebSockets maintain a persistent TCP connection, allowing the server to immediately push updates whenever another user edits the document.
-
----
-
-## Why Yjs?
-
-One of the hardest problems in collaborative software is handling concurrent edits.
-
-Imagine two users typing at exactly the same location.
-
-Instead of locking the document or forcing users to manually merge changes, Yjs represents edits as CRDT operations.
-
-This guarantees that all document replicas eventually converge to the same state, regardless of the order in which updates arrive.
+- Lower network bandwidth
+- Reduced serialization overhead
+- Faster synchronization
+- Better scalability for large documents
 
 ---
 
-## Why Redis Pub/Sub?
+## Stateless Backend Services
 
-A single backend server can synchronize all users connected to it.
+Authentication is performed using JWTs rather than server-side sessions.
 
-However, once the application is deployed across multiple backend instances, a new problem appears.
-
-```
-User A
-     │
-     ▼
- Server A
-
- User B
-     │
-     ▼
- Server B
-```
-
-Without communication between servers, User B never receives User A's edits.
-
-Redis solves this by acting as a message bus.
-
-```mermaid
-flowchart LR
-
-A[Server A]
-
-B[(Redis)]
-
-C[Server B]
-
-A -->|Publish Update| B
-
-B -->|Broadcast Update| C
-```
-
-Every backend instance subscribes to the same Redis channel.
-
-When one server receives a document update, all other servers receive it automatically.
-
-This allows users connected to different backend instances to continue collaborating without direct server-to-server communication.
+This allows backend instances to remain stateless, making horizontal scaling significantly simpler because session information does not need to be shared between servers.
 
 ---
 
-## Why MongoDB?
+## Event-Driven Communication
 
-Collaborative editing generates frequent document updates.
+The synchronization service reacts to incoming events instead of continuously polling for state changes.
 
-MongoDB stores:
-
-- document metadata
-- persisted Yjs state
-- ownership information
-
-Persisting the binary Yjs document instead of plain text allows collaborative state to be restored efficiently when users reconnect.
+This event-driven model reduces unnecessary work while improving responsiveness during collaborative editing.
 
 ---
 
-# Project Structure
+# Networking Concepts Demonstrated
 
-```
-collaborative-document-editor/
+This project applies several networking concepts commonly encountered in distributed applications.
 
-├── frontend/
-│   ├── components/
-│   ├── pages/
-│   ├── hooks/
-│   ├── services/
-│   └── editor/
-│
-├── backend/
-│   ├── controllers/
-│   ├── middleware/
-│   ├── models/
-│   ├── routes/
-│   ├── websocket/
-│   ├── redis/
-│   ├── services/
-│   └── config/
-│
-├── docker-compose.yml
-└── README.md
-```
+### TCP-Based Persistent Connections
 
-The backend separates responsibilities into dedicated modules, making authentication, persistence, and synchronization easier to maintain independently.
+WebSockets establish long-lived TCP connections that remain active throughout a collaborative editing session.
 
 ---
 
-# API Overview
+### Full-Duplex Communication
 
-## Authentication
+Both client and server can transmit messages independently without waiting for a request-response cycle.
 
-| Method | Endpoint | Authentication | Description |
-|---------|----------|----------------|-------------|
-| POST | `/api/auth/register` | No | Register a new user |
-| POST | `/api/auth/login` | No | Authenticate user |
+This enables real-time synchronization between collaborators.
 
 ---
 
-## Documents
+### Binary Message Transmission
 
-| Method | Endpoint | Authentication | Description |
-|---------|----------|----------------|-------------|
-| GET | `/api/documents` | Required | List user documents |
-| POST | `/api/documents` | Required | Create document |
-| GET | `/api/documents/:id` | Required | Fetch document |
-| DELETE | `/api/documents/:id` | Owner | Delete document |
+Yjs encodes document changes as compact binary updates before transmission.
+
+Compared to repeatedly sending serialized document text, binary updates reduce payload size and improve synchronization efficiency.
 
 ---
 
-# WebSocket Responsibilities
+### Publish-Subscribe Messaging
 
-The WebSocket layer is responsible for:
+Redis Pub/Sub decouples backend instances by acting as an intermediary message broker.
 
-- joining collaborative sessions
-- synchronizing CRDT updates
-- broadcasting remote edits
-- live cursor awareness
-- user presence
-- reconnecting disconnected clients
+Rather than communicating directly, backend services publish updates to Redis and subscribe to document update channels.
 
-Unlike REST APIs, WebSockets follow an event-driven model where the server can push updates whenever document state changes.
+This simplifies horizontal scaling while keeping backend services independent.
 
 ---
 
 # Implementation Challenges
 
-Building a collaborative editor involved more than connecting libraries together. Most of the effort went into handling synchronization, state management, and communication between distributed components.
+Developing a real-time synchronization system introduced several engineering challenges beyond implementing REST APIs and a user interface.
 
-Some of the key implementation challenges are described below.
-
----
-
-## 1. Editor Initialization Race Condition
-
-**Problem**
-
-The editor could initialize before the shared Yjs document finished synchronizing, leading to inconsistent initial state.
-
-**Solution**
-
-Delay editor initialization until the shared document is ready, ensuring every collaborator starts from the same synchronized state.
+The primary focus was maintaining a consistent shared document state while minimizing communication overhead.
 
 ---
 
-## 2. Synchronizing Users Across Multiple Backend Instances
+## Challenge 1 – Editor Initialization Race Condition
 
 **Problem**
 
-When different users connected to different backend instances, document updates needed to be propagated across servers instead of remaining local to a single process.
+The editor could initialize before the shared document state was fully synchronized, resulting in inconsistent initial content.
 
 **Solution**
 
-Redis Pub/Sub acts as a communication layer between backend instances. Every server subscribes to the same channel and broadcasts incoming updates to its connected clients.
+Initialization was delayed until the synchronization layer completed loading the shared document state.
 
 ---
 
-## 3. Efficient Document Synchronization
+## Challenge 2 – Cross-Instance Synchronization
 
 **Problem**
 
-Sending the complete document after every keystroke creates unnecessary network traffic and quickly becomes inefficient for larger documents.
+When collaborators connected to different backend instances, document updates remained local to the server that initially received them.
 
 **Solution**
 
-Yjs generates compact binary updates containing only the changes. These incremental updates are transmitted over WebSockets and applied by every connected client.
+Redis Pub/Sub was introduced as a messaging layer between backend instances.
+
+Every synchronization service publishes outgoing updates and subscribes to updates generated by other instances, allowing all connected clients to observe the same document state.
 
 ---
 
-## 4. Connection Recovery
+## Challenge 3 – Efficient Network Communication
 
 **Problem**
 
-Users may temporarily lose their network connection while editing.
+Sending the complete document after every edit increases bandwidth consumption and introduces unnecessary serialization overhead.
 
 **Solution**
 
-The client automatically reconnects and synchronizes with the latest persisted document state, allowing collaboration to continue without manual refresh.
+The synchronization layer exchanges only binary CRDT updates.
+
+Each client reconstructs the latest document state locally by applying incremental updates instead of replacing the complete document.
+
+---
+
+## Challenge 4 – Stateless Authentication
+
+**Problem**
+
+Traditional session-based authentication complicates horizontal scaling because session state must be shared across backend instances.
+
+**Solution**
+
+JWT-based authentication allows backend services to remain stateless.
+
+Any backend instance can authenticate incoming requests without relying on shared session storage.
+
 ---
 
 # Performance Considerations
 
-Although this project was built primarily for learning distributed systems, several design decisions were made with performance in mind.
+Several implementation decisions were made to reduce latency and unnecessary resource utilization.
 
-| Design Choice | Benefit |
-|---------------|----------|
-| WebSockets | Eliminates repeated HTTP polling |
-| CRDT Updates | Only document changes are transmitted |
-| Binary Serialization | Smaller network payloads |
-| Redis Pub/Sub | Efficient communication between backend instances |
-| JWT Authentication | Stateless authentication simplifies horizontal scaling |
-| MongoDB | Flexible persistence for collaborative document state |
+| Design Decision | Engineering Benefit |
+|-----------------|--------------------|
+| Persistent WebSocket connections | Eliminates repeated TCP connection establishment |
+| Binary CRDT updates | Reduces network payload size |
+| Redis Pub/Sub | Efficient cross-instance synchronization |
+| Stateless JWT authentication | Simplifies horizontal scaling |
+| Event-driven synchronization | Avoids polling overhead |
 
-The focus was not on premature optimization, but on choosing architectures that naturally scale as more users collaborate.
+The project prioritizes efficient communication rather than computational optimization.
 
 ---
 
 # Design Trade-offs
 
-Every architectural decision involves trade-offs.
+Every architectural decision introduces both advantages and limitations.
 
 | Decision | Benefit | Trade-off |
-|-----------|----------|-----------|
-| WebSockets | Low latency | Long-lived connections require connection management |
-| CRDTs | Automatic conflict resolution | More difficult to understand than simple document replacement |
-| Redis Pub/Sub | Enables horizontal scaling | Additional infrastructure dependency |
-| Stateless JWT Authentication | Easy scaling | Token revocation requires additional handling |
-| MongoDB | Flexible document storage | Eventual consistency considerations for distributed updates |
+|----------|----------|-----------|
+| WebSockets | Low-latency communication | Requires persistent connection management |
+| CRDTs | Automatic conflict resolution | Higher implementation complexity |
+| Redis Pub/Sub | Loose coupling between backend instances | Additional infrastructure dependency |
+| JWT Authentication | Stateless architecture | Token revocation requires additional handling |
+| MongoDB | Flexible document persistence | Strong consistency guarantees depend on application logic |
 
-Understanding these trade-offs was one of the most valuable outcomes of building this project.
+Understanding these trade-offs was an important part of the project design.
 
 ---
 
-# Future Improvements
+# Possible Future Improvements
 
-There are several areas that could extend the current architecture.
+The current implementation provides the core synchronization pipeline.
 
-### Collaboration
+Potential improvements include:
 
-- Document sharing with role-based permissions
-- Comments and suggestion mode
-- Rich presence indicators
-- Collaborative cursors with user profiles
+### Networking
 
-### Reliability
+- Binary protocol compression
+- Heartbeat and keep-alive monitoring
+- Improved reconnect strategy
+- Connection pooling
 
-- Offline editing
-- Automatic conflict visualization
-- Incremental document snapshots
-- Background synchronization workers
+### Synchronization
+
+- Incremental snapshot persistence
+- Partial document synchronization
+- Fine-grained update batching
+- Improved conflict visualization
+
+### Scalability
+
+- Load balancing across synchronization services
+- Kubernetes deployment
+- Distributed caching
+- Horizontal database scaling
 
 ### Observability
 
 - Structured logging
-- Performance metrics
-- Prometheus monitoring
-- Grafana dashboards
-
-### Deployment
-
-- Kubernetes deployment
-- CI/CD pipeline
-- Nginx reverse proxy
-- Load balancing across backend instances
+- Synchronization latency metrics
+- Distributed tracing
+- Runtime monitoring with Prometheus and Grafana
 
 ---
 
 # Running the Project
 
-## Clone the Repository
+## Clone Repository
 
 ```bash
 git clone https://github.com/Abhijayapal/collaborative-document-editor.git
@@ -534,6 +475,7 @@ Frontend
 
 ```bash
 cd frontend
+
 npm install
 ```
 
@@ -541,6 +483,7 @@ Backend
 
 ```bash
 cd backend
+
 npm install
 ```
 
@@ -550,12 +493,10 @@ npm install
 
 Create a `.env` file inside the backend directory.
 
-Example:
-
 ```env
 PORT=5000
 
-MONGO_URI=<your_mongodb_connection>
+MONGO_URI=<your_connection_string>
 
 JWT_SECRET=<your_secret>
 
@@ -564,7 +505,7 @@ REDIS_URL=redis://localhost:6379
 
 ---
 
-## Start the Services
+## Start the Application
 
 Backend
 
@@ -584,7 +525,7 @@ Redis
 redis-server
 ```
 
-Or start everything using Docker Compose.
+Alternatively, launch all services using Docker Compose.
 
 ```bash
 docker-compose up
@@ -592,9 +533,25 @@ docker-compose up
 
 ---
 
+# Technologies Used
+
+| Category | Technologies |
+|-----------|--------------|
+| Language | JavaScript |
+| Frontend | React, TipTap |
+| Backend | Node.js, Express |
+| Communication | HTTP, WebSockets |
+| Synchronization | Yjs (CRDT) |
+| Messaging | Redis Pub/Sub |
+| Database | MongoDB |
+| Authentication | JWT, bcrypt |
+| Containerization | Docker |
+
+---
+
 # References
 
-The following resources were particularly helpful while building this project.
+The implementation was developed using concepts and documentation from:
 
 - Yjs Documentation
 - TipTap Documentation
@@ -604,18 +561,12 @@ The following resources were particularly helpful while building this project.
 - WebSocket RFC 6455
 
 ---
+# Engineering Takeaways
 
-# Tech Stack Summary
+Building this project reinforced several practical software engineering principles:
 
-| Category | Technologies |
-|-----------|--------------|
-| Frontend | React, TipTap |
-| Backend | Node.js, Express |
-| Communication | WebSockets |
-| Synchronization | Yjs (CRDT) |
-| Distributed Messaging | Redis Pub/Sub |
-| Database | MongoDB |
-| Authentication | JWT, bcrypt |
-| Deployment | Docker |
-
----
+- Persistent connections are more suitable than repeated request-response communication for real-time systems.
+- Separating synchronization logic from REST APIs results in a cleaner and more maintainable architecture.
+- Horizontal scalability requires backend instances to communicate through a messaging layer rather than directly.
+- Incremental state synchronization is significantly more efficient than repeatedly transmitting complete application state.
+- Designing distributed systems often involves understanding communication patterns and trade-offs rather than writing complex algorithms.
